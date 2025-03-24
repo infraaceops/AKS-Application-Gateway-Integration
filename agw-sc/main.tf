@@ -1,6 +1,6 @@
 provider "azurerm" {
   features {}
-  subscription_id = "139173917313-13131-121w1xs2-32dj"
+  subscription_id = "3b0f549f-0e89-4e6b-b010-0781de4d03e8"
 }
 
 # Variables
@@ -32,6 +32,7 @@ resource "azurerm_resource_group" "rg" {
 
 # Create a storage account with static website hosting enabled
 resource "azurerm_storage_account" "storage" {
+  for_each = var.container_registeries
   name                     = var.storage_account_name
   resource_group_name      = azurerm_resource_group.rg.name
   location                 = azurerm_resource_group.rg.location
@@ -45,8 +46,9 @@ resource "azurerm_storage_account" "storage" {
 
 # Upload a sample index.html file to the $web container
 resource "azurerm_storage_blob" "index" {
+  source = ../../../
   name                   = "index.html"
-  storage_account_name   = azurerm_storage_account.storage.name
+  storage_account_name   = azurerm_storage_account.*.storage.name
   storage_container_name = "$web"
   type                   = "Block"
   content_type           = "text/html"
@@ -142,4 +144,51 @@ output "app_gateway_public_ip" {
 # Output the static website URL
 output "static_website_url" {
   value = azurerm_storage_account.storage.primary_web_endpoint
+}
+resource "azurerm_network_security_group" "nsg" {
+  name                = "nsg-buc-dev"
+  location            = azurerm_resource_group.rg.location
+  resource_group_name = azurerm_resource_group.rg.name
+
+  security_rule {
+    name                       = "AllowAppGatewayPorts"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["65200-65535"]
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+
+  security_rule {
+    name                       = "AllowAppGatewayHttpPorts"
+    priority                   = 101
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_ranges    = ["80", "443"]
+    source_address_prefix      = "Internet"
+    destination_address_prefix = "*"
+  }
+
+    security_rule {
+    name                       = "DenyAllInbound"
+    priority                   = 4096  # Changed from 65500 to 4096
+    direction                  = "Inbound"
+    access                     = "Deny"
+    protocol                   = "*"
+    source_port_range          = "*"
+    destination_port_range     = "*"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+    }
+
+}
+
+resource "azurerm_subnet_network_security_group_association" "nsg_association" {
+  subnet_id                 = azurerm_subnet.appgw_subnet.id
+  network_security_group_id = azurerm_network_security_group.nsg.id
 }
